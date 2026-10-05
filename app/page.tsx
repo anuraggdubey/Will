@@ -3,20 +3,26 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Activity,
-  AlertTriangle,
+  AlertCircle,
   Bot,
   Check,
   ChevronDown,
-  ChevronRight,
+  ChevronUp,
   Clock,
+  Compass,
   Copy,
   ExternalLink,
   FastForward,
+  FileText,
   Heart,
+  HelpCircle,
   Lock,
+  MessageSquare,
+  Plus,
   RefreshCw,
   RotateCcw,
   SendHorizontal,
+  Settings2,
   Shield,
   ShieldAlert,
   Sparkles,
@@ -33,6 +39,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
 type Stage = "ACTIVE" | "WARNING" | "WINDING_DOWN" | "EXECUTABLE" | "SETTLED";
+type ActiveTab = "chat" | "vault" | "briefs";
 
 interface EstateData {
   stage: Stage;
@@ -85,32 +92,72 @@ interface Message {
   error?: boolean;
 }
 
-const STAGES: Array<{ id: Stage; label: string; desc: string; color: string; bg: string; border: string }> = [
-  { id: "ACTIVE", label: "ACTIVE", desc: "Full operations & intake", color: "text-[#C8E850]", bg: "bg-[#C8E850]/10", border: "border-[#C8E850]/30" },
-  { id: "WARNING", label: "WARNING", desc: "Spend throttled to 25%", color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/30" },
-  { id: "WINDING_DOWN", label: "WINDING DOWN", desc: "Intake frozen · Refunds active", color: "text-rose-400", bg: "bg-rose-500/10", border: "border-rose-500/30" },
-  { id: "EXECUTABLE", label: "EXECUTABLE", desc: "Will ready for settlement", color: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/30" },
-  { id: "SETTLED", label: "SETTLED", desc: "Estate disbursed to heirs", color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/30" },
-];
+const STAGES_META: Record<
+  Stage,
+  { label: string; badge: string; border: string; glow: string; desc: string }
+> = {
+  ACTIVE: {
+    label: "Active",
+    badge: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+    border: "border-emerald-500/40",
+    glow: "shadow-emerald-500/10",
+    desc: "Full autonomy · Accepting briefs & servicing digests",
+  },
+  WARNING: {
+    label: "Warning",
+    badge: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+    border: "border-amber-500/40",
+    glow: "shadow-amber-500/10",
+    desc: "Missed heartbeat · Outbound allowance throttled to 25%",
+  },
+  WINDING_DOWN: {
+    label: "Winding Down",
+    badge: "bg-rose-500/10 text-rose-400 border-rose-500/30",
+    border: "border-rose-500/40",
+    glow: "shadow-rose-500/10",
+    desc: "Critical lapse · Intake frozen · Auto-refunds active",
+  },
+  EXECUTABLE: {
+    label: "Executable",
+    badge: "bg-purple-500/10 text-purple-400 border-purple-500/30",
+    border: "border-purple-500/40",
+    glow: "shadow-purple-500/10",
+    desc: "Timelock reached · Permissionless executeWill() ready",
+  },
+  SETTLED: {
+    label: "Settled",
+    badge: "bg-blue-500/10 text-blue-400 border-blue-500/30",
+    border: "border-blue-500/40",
+    glow: "shadow-blue-500/10",
+    desc: "Will executed · Residual funds partitioned to heirs",
+  },
+};
 
 export default function Home() {
+  const [activeTab, setActiveTab] = useState<ActiveTab>("chat");
   const [estate, setEstate] = useState<EstateData | null>(null);
   const [briefs, setBriefs] = useState<StandingBriefItem[]>([]);
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [wallet, setWallet] = useState<{ address: string | null; balance?: string }>({ address: null });
+  const [showWarpDrawer, setShowWarpDrawer] = useState(false);
+  const [showCommissionModal, setShowCommissionModal] = useState(false);
+  const [expandedSteps, setExpandedSteps] = useState<Record<number, boolean>>({});
+
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "agent",
-      text: "Greetings. I am the Wills Analyst, an autonomous research agent operating under an on-chain estate protocol on Base Sepolia. I deliver daily research briefs to paying clients, guarded by my owner's heartbeat. If my owner lapses, my spending throttles, new intake ceases, and clients receive automatic refunds before leftover funds disburse to heirs. How may I assist your inquiries today?",
+      text: "Hello. I am the Wills Analyst, an autonomous research agent operating under an on-chain estate. My funds sit in a smart vault on Base Sepolia gated by my owner's heartbeat. If my owner goes silent, my spending throttles, new work freezes, and clients receive refunds before leftover assets flow to heirs. How can I assist you today?",
     },
   ]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-  const [showNewBriefModal, setShowNewBriefModal] = useState(false);
+
+  // New brief state
   const [newTopic, setNewTopic] = useState("");
   const [newDays, setNewDays] = useState(7);
-  const [actionLoading, setActionLoading] = useState(false);
+
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const loadEstate = async () => {
@@ -118,7 +165,7 @@ export default function Home() {
       const res = await fetch("/api/estate");
       if (res.ok) setEstate(await res.json());
     } catch (e) {
-      console.error("Failed to fetch estate", e);
+      console.error(e);
     }
   };
 
@@ -126,11 +173,11 @@ export default function Home() {
     try {
       const res = await fetch("/api/jobs");
       if (res.ok) {
-        const data = await res.json();
-        setBriefs(data.briefs || []);
+        const d = await res.json();
+        setBriefs(d.briefs || []);
       }
     } catch (e) {
-      console.error("Failed to fetch briefs", e);
+      console.error(e);
     }
   };
 
@@ -138,11 +185,11 @@ export default function Home() {
     try {
       const res = await fetch("/api/agent");
       if (res.ok) {
-        const data = await res.json();
-        setTools(data.tools || []);
+        const d = await res.json();
+        setTools(d.tools || []);
       }
     } catch (e) {
-      console.error("Failed to load agent tools", e);
+      console.error(e);
     }
   };
 
@@ -151,7 +198,7 @@ export default function Home() {
       const res = await fetch("/api/wallet");
       if (res.ok) setWallet(await res.json());
     } catch (e) {
-      console.error("Failed to load wallet", e);
+      console.error(e);
     }
   };
 
@@ -172,14 +219,13 @@ export default function Home() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, thinking]);
 
-  const copyToClipboard = (text: string, id: string) => {
+  const copyText = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
     setCopied(id);
     setTimeout(() => setCopied(null), 2000);
   };
 
-  // Heartbeat & Time warp actions
-  const triggerEstateAction = async (action: string, payload: any = {}) => {
+  const triggerAction = async (action: string, payload: any = {}) => {
     setActionLoading(true);
     try {
       const res = await fetch("/api/estate", {
@@ -193,7 +239,7 @@ export default function Home() {
         loadAgentStatus();
       }
     } catch (e) {
-      console.error("Action failed", e);
+      console.error(e);
     } finally {
       setActionLoading(false);
     }
@@ -209,12 +255,12 @@ export default function Home() {
         body: JSON.stringify({ topic: newTopic, days: newDays }),
       });
       if (res.ok) {
-        setShowNewBriefModal(false);
+        setShowCommissionModal(false);
         setNewTopic("");
         refreshAll();
       } else {
         const err = await res.json();
-        alert(err.error || "Failed to commission brief");
+        alert(err.error || "Failed");
       }
     } catch (e: any) {
       alert(e.message || "Failed");
@@ -255,591 +301,548 @@ export default function Home() {
     setThinking(false);
   };
 
-  const activeStage = estate?.stage || "ACTIVE";
-  const stageIndex = STAGES.findIndex((s) => s.id === activeStage);
+  const stage = estate?.stage || "ACTIVE";
+  const stageMeta = STAGES_META[stage];
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-[1600px] flex-col gap-6 px-4 py-6 md:px-10 md:py-8 font-sans">
-      {/* ─── 1. TOP HEADER & PROTOCOL STATUS ─── */}
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border/40 pb-5">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-sm bg-[#C8E850]/15 border border-[#C8E850]/40 text-[#C8E850]">
-            <Shield className="h-6 w-6" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-heading text-2xl font-bold tracking-tight uppercase">WILLS</h1>
-              <span className="text-xs font-mono uppercase px-2 py-0.5 rounded-xs bg-[#C8E850]/15 text-[#C8E850] border border-[#C8E850]/30 font-medium">
-                Protocol v0.1
-              </span>
-              <span className="text-xs font-mono text-muted-foreground hidden sm:inline">
-                Base Sepolia Testnet
-              </span>
+    <div className="min-h-screen text-slate-100 flex flex-col justify-between selection:bg-indigo-500/20">
+      {/* ─── TOP NAVBAR (Clean, uncluttered, focused) ─── */}
+      <header className="sticky top-0 z-30 border-b border-white/[0.07] bg-[#0B0D13]/80 backdrop-blur-xl">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+          {/* Logo & Status */}
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+              <Shield className="h-4.5 w-4.5" />
             </div>
-            <p className="text-xs text-muted-foreground font-mono">
-              An Estate for Autonomous Agents · Heartbeat Gated · Liquidity Waterfall
-            </p>
-          </div>
-        </div>
-
-        {/* Wallet & Owner Info */}
-        <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
-          <div className="flex items-center gap-2 bg-card/80 border border-border/60 px-3 py-1.5 rounded-sm">
-            <span className="text-muted-foreground">Agent Wallet:</span>
-            <span className="text-[#F2F1EC] font-semibold">
-              {wallet.address ? `${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}` : "No Wallet Yet"}
-            </span>
-            {wallet.address && (
-              <button
-                onClick={() => copyToClipboard(wallet.address!, "agent-addr")}
-                className="text-muted-foreground hover:text-foreground transition-colors"
-                title="Copy Address"
-              >
-                {copied === "agent-addr" ? <Check className="h-3.5 w-3.5 text-[#C8E850]" /> : <Copy className="h-3.5 w-3.5" />}
-              </button>
-            )}
-            {wallet.balance && (
-              <span className="text-[#C8E850] ml-1">({wallet.balance})</span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1.5 bg-card/80 border border-border/60 px-3 py-1.5 rounded-sm text-muted-foreground">
-            <Activity className="h-3.5 w-3.5 text-[#C8E850] animate-pulse" />
-            <span>Clock: <strong className="text-foreground">{estate?.now ? new Date(estate.now * 1000).toLocaleTimeString() : "--:--"}</strong></span>
-          </div>
-        </div>
-      </header>
-
-      {/* ─── 2. HERO: ESTATE LIFECYCLE TIMELINE ─── */}
-      <section className="relative overflow-hidden rounded-md border border-border/80 bg-card/60 p-5 backdrop-blur-md">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5 pb-4 border-b border-border/40">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-mono uppercase text-muted-foreground tracking-wider">
-                Autonomous Estate State Machine
-              </span>
-              <span className={cn(
-                "px-2 py-0.5 rounded-xs text-xs font-mono font-bold uppercase",
-                activeStage === "ACTIVE" && "bg-[#C8E850]/20 text-[#C8E850] border border-[#C8E850]/40",
-                activeStage === "WARNING" && "bg-amber-500/20 text-amber-400 border border-amber-500/40",
-                activeStage === "WINDING_DOWN" && "bg-rose-500/20 text-rose-400 border border-rose-500/40",
-                activeStage === "EXECUTABLE" && "bg-purple-500/20 text-purple-400 border border-purple-500/40",
-                activeStage === "SETTLED" && "bg-blue-500/20 text-blue-400 border border-blue-500/40"
-              )}>
-                ● {activeStage}
-              </span>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {activeStage === "ACTIVE" && "Full autonomous capabilities. Agent services briefs and accesses allowed tools."}
-              {activeStage === "WARNING" && "Owner heartbeat threshold missed. Outbound allowance throttled to 25%."}
-              {activeStage === "WINDING_DOWN" && "Critical lapse. New intake frozen. Unfinished briefs marked for automatic customer refund."}
-              {activeStage === "EXECUTABLE" && "Timelock expired. Permissionless executeWill() can be triggered by anyone or keeper."}
-              {activeStage === "SETTLED" && "Will executed. Residual vault balance partitioned to named heirs on-chain."}
-            </p>
-          </div>
-
-          {/* Heartbeat Status & Countdown Ticker */}
-          <div className="flex items-center gap-4 bg-background/80 border border-border/80 p-3 rounded-sm font-mono">
-            <div className="text-right">
-              <div className="text-[10px] uppercase text-muted-foreground">Lapse Timer</div>
-              <div className="text-lg font-bold text-foreground">
-                {estate?.elapsed ?? 0}s <span className="text-xs font-normal text-muted-foreground">elapsed</span>
-              </div>
-            </div>
-            <div className="h-8 w-px bg-border/60" />
             <div>
-              <div className="text-[10px] uppercase text-muted-foreground">Next Stage Transition</div>
-              <div className="text-lg font-bold text-[#C8E850]">
-                {estate?.secondsUntilNext !== null ? `${estate?.secondsUntilNext}s` : "TERMINAL"}
+              <div className="flex items-center gap-2">
+                <span className="font-heading font-bold text-base tracking-tight text-white">WILLS</span>
+                <span className={cn("text-[11px] font-mono px-2 py-0.5 rounded-full border", stageMeta.badge)}>
+                  ● {stageMeta.label}
+                </span>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Visual Stage Progress Line */}
-        <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
-          {STAGES.map((s, idx) => {
-            const isCurrent = s.id === activeStage;
-            const isPast = idx < stageIndex;
-            return (
-              <div
-                key={s.id}
-                className={cn(
-                  "flex flex-col p-3 rounded-sm border transition-all duration-300 relative",
-                  isCurrent ? `${s.bg} ${s.border} ring-1 ring-offset-0 ring-foreground/20` : "bg-card/40 border-border/40 opacity-70",
-                  isPast && "border-border/60 bg-muted/20"
-                )}
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className={cn("text-xs font-mono font-bold tracking-wider", s.color)}>
-                    {s.label}
-                  </span>
-                  {isCurrent && <span className="flex h-2 w-2 rounded-full bg-[#C8E850] animate-ping" />}
-                  {isPast && <Check className="h-3.5 w-3.5 text-muted-foreground" />}
-                </div>
-                <span className="text-[11px] text-muted-foreground font-mono">{s.desc}</span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* ─── 3. SIMULATION & HEARTBEAT CONTROLS ─── */}
-        <div className="mt-5 pt-4 border-t border-border/40 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Button
-              onClick={() => triggerEstateAction("heartbeat")}
-              disabled={actionLoading || estate?.isSettled}
-              className="bg-[#C8E850] text-[#0A0A0A] hover:bg-[#C8E850]/90 font-bold px-4 py-2 text-xs uppercase tracking-wider font-mono flex items-center gap-2"
-            >
-              <Heart className="h-4 w-4 fill-current animate-pulse text-[#0A0A0A]" />
-              Send Heartbeat ("I'm Alive")
-            </Button>
-            <span className="text-[11px] text-muted-foreground font-mono hidden sm:inline">
-              Resets lapse timer to 0s
-            </span>
-          </div>
-
-          {/* Time Warp Buttons */}
-          <div className="flex flex-wrap items-center gap-1.5 font-mono">
-            <span className="text-xs text-muted-foreground mr-1 flex items-center gap-1">
-              <FastForward className="h-3 w-3 text-[#C8E850]" /> Time Warp:
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => triggerEstateAction("warp", { seconds: 30 })}
-              disabled={actionLoading}
-              className="h-7 text-xs px-2.5 bg-background border-border/60 hover:bg-card"
-            >
-              +30s
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => triggerEstateAction("warp", { seconds: 90 })}
-              disabled={actionLoading}
-              className="h-7 text-xs px-2.5 bg-background border-border/60 hover:bg-card text-amber-400"
-            >
-              +90s (Warning)
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => triggerEstateAction("warp", { seconds: 180 })}
-              disabled={actionLoading}
-              className="h-7 text-xs px-2.5 bg-background border-border/60 hover:bg-card text-rose-400"
-            >
-              +180s (Wind Down)
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => triggerEstateAction("warp", { seconds: 300 })}
-              disabled={actionLoading}
-              className="h-7 text-xs px-2.5 bg-background border-border/60 hover:bg-card text-purple-400"
-            >
-              +300s (Executable)
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => triggerEstateAction("reset")}
-              disabled={actionLoading}
-              className="h-7 text-xs px-2.5 bg-background border-border/60 hover:bg-card text-muted-foreground"
-              title="Reset simulation to real-world clock"
-            >
-              <RotateCcw className="h-3 w-3 mr-1" /> Reset
-            </Button>
-
-            {activeStage === "EXECUTABLE" && !estate?.isSettled && (
-              <Button
-                size="sm"
-                onClick={() => triggerEstateAction("executeWill")}
-                disabled={actionLoading}
-                className="h-7 text-xs px-3 bg-purple-600 hover:bg-purple-700 text-white font-bold ml-1 animate-bounce"
-              >
-                <Zap className="h-3 w-3 mr-1 fill-current" /> Execute Will
-              </Button>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* ─── 4. FINANCIAL ARCHITECTURE CARDS (4 METRICS) ─── */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Vault Balance */}
-        <Card className="bg-card/70 border-border/80">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between text-xs font-mono text-muted-foreground">
-              <span>Vault Estate (USDC)</span>
-              <Shield className="h-4 w-4 text-[#C8E850]" />
-            </div>
-            <div className="font-mono text-2xl font-bold text-foreground">
-              {estate?.vaultBalance.formatted || "25.00 USDC"}
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0 text-[11px] font-mono text-muted-foreground">
-            Base Sepolia Smart Vault · On-Chain Reserves
-          </CardContent>
-        </Card>
-
-        {/* Card 2: Operating Float */}
-        <Card className="bg-card/70 border-border/80">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between text-xs font-mono text-muted-foreground">
-              <span>Agent Float (Hot Wallet)</span>
-              <Wallet className="h-4 w-4 text-blue-400" />
-            </div>
-            <div className="font-mono text-2xl font-bold text-foreground">
-              {estate?.agentFloat.formatted || "2.50 USDC"}
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0 text-[11px] font-mono text-muted-foreground">
-            Allowance Pool · Working Capital
-          </CardContent>
-        </Card>
-
-        {/* Card 3: Customer Earmark (Invariant I1) */}
-        <Card className="bg-card/70 border-border/80 relative overflow-hidden">
-          <div className="absolute top-0 right-0 h-1 w-full bg-[#C8E850]" />
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between text-xs font-mono text-muted-foreground">
-              <span className="flex items-center gap-1 text-[#C8E850] font-bold">
-                <Lock className="h-3 w-3" /> Customer Earmark (I1)
-              </span>
-              <span className="text-[10px] text-muted-foreground uppercase">Protected</span>
-            </div>
-            <div className="font-mono text-2xl font-bold text-[#C8E850]">
-              {estate?.earmarked.formatted || "1.20 USDC"}
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0 text-[11px] font-mono text-muted-foreground">
-            Unearned client prepayments · Never spendable
-          </CardContent>
-        </Card>
-
-        {/* Card 4: Allowance Remaining */}
-        <Card className="bg-card/70 border-border/80">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between text-xs font-mono text-muted-foreground">
-              <span>Period Allowance</span>
-              <Clock className="h-4 w-4 text-amber-400" />
-            </div>
-            <div className="font-mono text-2xl font-bold text-foreground">
-              {estate?.allowanceRemaining.formatted || "1.00 USDC"}
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0 text-[11px] font-mono text-muted-foreground">
-            {activeStage === "WARNING" ? "Throttled to 25% (0.25 USDC cap)" : "Draw limit per 60s period"}
-          </CardContent>
-        </Card>
-      </section>
-
-      {/* ─── 5. TWO-COLUMN WORKSPACE: JOBS & AGENT TERMINAL ─── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* LEFT COLUMN: STANDING BRIEFS (5 COLS) */}
-        <div className="lg:col-span-5 flex flex-col gap-4">
-          <div className="flex items-center justify-between border-b border-border/40 pb-2">
-            <div className="flex items-center gap-2">
-              <h2 className="font-heading text-lg font-bold uppercase tracking-tight">Standing Briefs</h2>
-              <Badge variant="outline" className="font-mono text-xs">
-                {briefs.length} Active
-              </Badge>
-            </div>
-
-            <Button
-              size="sm"
-              onClick={() => setShowNewBriefModal(!showNewBriefModal)}
-              disabled={activeStage !== "ACTIVE"}
+          {/* Center Tabs: Clear Segregation of Concerns */}
+          <nav className="flex items-center bg-white/[0.04] p-1 rounded-xl border border-white/[0.06] text-xs font-medium">
+            <button
+              onClick={() => setActiveTab("chat")}
               className={cn(
-                "h-7 text-xs font-mono uppercase font-bold",
-                activeStage === "ACTIVE"
-                  ? "bg-[#C8E850] text-[#0A0A0A] hover:bg-[#C8E850]/90"
-                  : "bg-muted text-muted-foreground cursor-not-allowed"
+                "flex items-center gap-2 px-3.5 py-1.5 rounded-lg transition-all",
+                activeTab === "chat" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-white"
               )}
             >
-              + Commission Brief
+              <MessageSquare className="h-3.5 w-3.5" />
+              <span>Analyst Chat</span>
+            </button>
+            <button
+              onClick={() => setActiveTab("vault")}
+              className={cn(
+                "flex items-center gap-2 px-3.5 py-1.5 rounded-lg transition-all",
+                activeTab === "vault" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-white"
+              )}
+            >
+              <Shield className="h-3.5 w-3.5" />
+              <span>Estate Vault</span>
+            </button>
+            <button
+              onClick={() => setActiveTab("briefs")}
+              className={cn(
+                "flex items-center gap-2 px-3.5 py-1.5 rounded-lg transition-all",
+                activeTab === "briefs" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-white"
+              )}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              <span>Standing Briefs ({briefs.length})</span>
+            </button>
+          </nav>
+
+          {/* Right Action: Heartbeat & Time Drawer */}
+          <div className="flex items-center gap-2.5">
+            <Button
+              onClick={() => triggerAction("heartbeat")}
+              disabled={actionLoading || estate?.isSettled}
+              size="sm"
+              className="h-8 px-3 rounded-lg text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-slate-950 flex items-center gap-1.5 shadow-sm transition-all"
+            >
+              <Heart className="h-3.5 w-3.5 fill-current animate-pulse text-slate-950" />
+              <span className="hidden sm:inline">I'm Alive</span>
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowWarpDrawer(!showWarpDrawer)}
+              className={cn(
+                "h-8 px-2.5 rounded-lg text-xs border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.07] text-slate-300 flex items-center gap-1.5",
+                showWarpDrawer && "border-indigo-500/50 bg-indigo-500/10 text-indigo-300"
+              )}
+              title="Time Machine / Fast-Forward Simulation"
+            >
+              <FastForward className="h-3.5 w-3.5 text-indigo-400" />
+              <span className="hidden md:inline">Time Warp</span>
             </Button>
           </div>
+        </div>
 
-          {/* Warning banner when intake is disabled */}
-          {activeStage !== "ACTIVE" && (
-            <div className="flex items-center gap-2 p-2.5 rounded-sm bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-mono">
-              <ShieldAlert className="h-4 w-4 shrink-0" />
-              <span>Intake frozen: Estate is in {activeStage}. Only ACTIVE agents accept briefs.</span>
-            </div>
-          )}
-
-          {/* New Brief Commission Form Drawer */}
-          {showNewBriefModal && (
-            <div className="p-4 rounded-sm border border-border/80 bg-card/80 flex flex-col gap-3 font-mono text-xs">
-              <div className="font-bold text-foreground">Commission a Standing Research Brief</div>
-              <div>
-                <label className="text-muted-foreground mb-1 block">Research Topic:</label>
-                <Input
-                  value={newTopic}
-                  onChange={(e) => setNewTopic(e.target.value)}
-                  placeholder="e.g. Rollup Settlement Latencies"
-                  className="h-8 text-xs font-mono bg-background"
-                />
+        {/* ─── TIME WARP DRAWER (Clean popdown for testing stage machine) ─── */}
+        {showWarpDrawer && (
+          <div className="border-t border-white/[0.06] bg-slate-950/95 py-3 px-4 backdrop-blur-2xl">
+            <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+              <div className="flex items-center gap-2 text-slate-400">
+                <FastForward className="h-3.5 w-3.5 text-indigo-400" />
+                <span>Simulate Owner Inaction:</span>
+                <span className="text-slate-200">Elapsed {estate?.elapsed ?? 0}s</span>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="flex-1">
-                  <label className="text-muted-foreground mb-1 block">Duration (Days):</label>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => triggerAction("warp", { seconds: 30 })}
+                  className="px-2.5 py-1 rounded-md bg-white/[0.05] hover:bg-white/[0.1] text-slate-200 border border-white/[0.06]"
+                >
+                  +30s
+                </button>
+                <button
+                  onClick={() => triggerAction("warp", { seconds: 90 })}
+                  className="px-2.5 py-1 rounded-md bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                >
+                  +90s (Warning)
+                </button>
+                <button
+                  onClick={() => triggerAction("warp", { seconds: 180 })}
+                  className="px-2.5 py-1 rounded-md bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                >
+                  +180s (Wind Down)
+                </button>
+                <button
+                  onClick={() => triggerAction("warp", { seconds: 300 })}
+                  className="px-2.5 py-1 rounded-md bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                >
+                  +300s (Executable)
+                </button>
+                <button
+                  onClick={() => triggerAction("reset")}
+                  className="px-2.5 py-1 rounded-md bg-white/[0.05] hover:bg-white/[0.1] text-slate-400 border border-white/[0.06] flex items-center gap-1"
+                >
+                  <RotateCcw className="h-3 w-3" /> Reset
+                </button>
+
+                {stage === "EXECUTABLE" && !estate?.isSettled && (
+                  <button
+                    onClick={() => triggerAction("executeWill")}
+                    className="px-3 py-1 rounded-md bg-purple-600 hover:bg-purple-500 text-white font-semibold flex items-center gap-1 shadow-lg shadow-purple-600/30 animate-pulse"
+                  >
+                    <Zap className="h-3 w-3 fill-current" /> Execute Will
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </header>
+
+      {/* ─── STAGE PROGRESS STRIP (Sleek, minimal, informative) ─── */}
+      <div className="border-b border-white/[0.06] bg-slate-900/30 py-2 px-4 text-xs">
+        <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-slate-400 text-[11px] uppercase tracking-wider font-mono">Stage:</span>
+            <span className="font-medium text-slate-200">{stageMeta.desc}</span>
+          </div>
+
+          <div className="flex items-center gap-4 text-slate-400 font-mono text-[11px]">
+            {estate?.secondsUntilNext !== null ? (
+              <span>Next transition in: <strong className="text-white">{estate?.secondsUntilNext}s</strong></span>
+            ) : (
+              <span className="text-purple-400">Terminal stage reached</span>
+            )}
+            <span>·</span>
+            <span>Vault: <strong className="text-emerald-400">{estate?.vaultBalance.formatted}</strong></span>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── MAIN CONTENT VIEW (Tabs switch gracefully) ─── */}
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 w-full flex-1 flex flex-col">
+        {/* ========================================================================= */}
+        {/* TAB 1: AGENT CHAT (Minimalist, elegant, conversational focus)             */}
+        {/* ========================================================================= */}
+        {activeTab === "chat" && (
+          <div className="flex flex-col flex-1 max-w-3xl mx-auto w-full gap-4">
+            {/* Stage Warning Notification if not Active */}
+            {stage !== "ACTIVE" && (
+              <div
+                className={cn(
+                  "p-3 rounded-xl border flex items-center justify-between gap-3 text-xs transition-all",
+                  stageMeta.badge
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="h-4 w-4 shrink-0" />
+                  <span>
+                    <strong>Stage Constraint ({stage}):</strong> {stageMeta.desc}
+                  </span>
+                </div>
+                <button
+                  onClick={() => triggerAction("heartbeat")}
+                  className="px-2.5 py-1 rounded-md bg-white/10 hover:bg-white/20 text-white font-medium shrink-0"
+                >
+                  Send Heartbeat
+                </button>
+              </div>
+            )}
+
+            {/* Chat Conversation Scroll Area */}
+            <div className="rounded-2xl border border-white/[0.08] bg-slate-900/40 p-4 sm:p-6 flex-1 min-h-[500px] flex flex-col justify-between">
+              <div className="flex flex-col gap-5 overflow-y-auto max-h-[540px] pr-2">
+                {messages.map((m, idx) => (
+                  <div
+                    key={idx}
+                    className={cn(
+                      "flex flex-col gap-2 rounded-2xl p-4 max-w-[85%] text-sm leading-relaxed",
+                      m.role === "user"
+                        ? "self-end bg-indigo-600/90 text-white rounded-br-xs shadow-md shadow-indigo-600/10"
+                        : "self-start bg-white/[0.04] border border-white/[0.07] text-slate-200 rounded-bl-xs"
+                    )}
+                  >
+                    <div className="flex items-center justify-between text-[11px] font-mono opacity-60">
+                      <span>{m.role === "user" ? "You" : "Wills Analyst"}</span>
+                      {m.steps && m.steps.length > 0 && (
+                        <button
+                          onClick={() =>
+                            setExpandedSteps((prev) => ({ ...prev, [idx]: !prev[idx] }))
+                          }
+                          className="hover:opacity-100 flex items-center gap-1 text-indigo-300"
+                        >
+                          <span>{m.steps.length} tool {m.steps.length > 1 ? "calls" : "call"}</span>
+                          {expandedSteps[idx] ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="whitespace-pre-wrap">{m.text}</div>
+
+                    {/* Collapsible Tool Execution Details */}
+                    {m.steps && m.steps.length > 0 && expandedSteps[idx] && (
+                      <div className="mt-2 pt-2 border-t border-white/[0.08] flex flex-col gap-2 font-mono text-xs">
+                        {m.steps.map((s, stepIdx) => (
+                          <div key={stepIdx} className="bg-black/30 p-2 rounded-lg border border-white/[0.05]">
+                            <div className="flex items-center justify-between text-indigo-300 font-bold mb-1">
+                              <span>⚡ {s.tool}</span>
+                              {s.error && <span className="text-rose-400">Blocked / Failed</span>}
+                            </div>
+                            <div className="text-[11px] text-slate-400 break-all">
+                              {JSON.stringify(s.result)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {thinking && (
+                  <div className="self-start flex items-center gap-2.5 p-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] text-xs text-slate-400">
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin text-indigo-400" />
+                    <span>Analyst evaluating estate stage & tools...</span>
+                  </div>
+                )}
+                <div ref={bottomRef} />
+              </div>
+
+              {/* Chat Input & Suggested Prompts */}
+              <div className="mt-4 pt-4 border-t border-white/[0.06] flex flex-col gap-2.5">
+                {/* Clean Prompt Chips */}
+                <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-400">
+                  <span className="text-[11px] mr-1">Ask:</span>
+                  <button
+                    onClick={() => send("What is your current estate stage and funds?")}
+                    className="px-2.5 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-slate-300 transition-colors"
+                  >
+                    "What's your estate status?"
+                  </button>
+                  <button
+                    onClick={() => send("List all active standing briefs and client balances")}
+                    className="px-2.5 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-slate-300 transition-colors"
+                  >
+                    "Show standing briefs"
+                  </button>
+                  <button
+                    onClick={() => send("What's the weather in Mumbai?")}
+                    className="px-2.5 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-slate-300 transition-colors"
+                  >
+                    "Test paid weather API"
+                  </button>
+                </div>
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    send(input);
+                  }}
+                  className="flex items-center gap-2"
+                >
                   <Input
-                    type="number"
-                    min={1}
-                    max={30}
-                    value={newDays}
-                    onChange={(e) => setNewDays(Number(e.target.value))}
-                    className="h-8 text-xs font-mono bg-background"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="Ask the Wills Analyst anything..."
+                    disabled={thinking}
+                    className="h-11 rounded-xl bg-white/[0.04] border-white/[0.08] text-sm focus-visible:ring-indigo-500"
+                  />
+                  <Button
+                    type="submit"
+                    disabled={thinking || !input.trim()}
+                    className="h-11 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium"
+                  >
+                    <SendHorizontal className="h-4 w-4" />
+                  </Button>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 2: ESTATE VAULT (Financial metrics & on-chain wills)                  */}
+        {/* ========================================================================= */}
+        {activeTab === "vault" && (
+          <div className="flex flex-col gap-6 max-w-4xl mx-auto w-full">
+            {/* Financial Overview Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="p-5 rounded-2xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl">
+                <div className="text-xs font-mono text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                  <span>Vault Estate</span>
+                  <Shield className="h-4 w-4 text-emerald-400" />
+                </div>
+                <div className="text-2xl font-bold font-heading text-white">
+                  {estate?.vaultBalance.formatted || "25.00 USDC"}
+                </div>
+                <p className="text-xs text-slate-400 mt-1">Smart Vault on Base Sepolia</p>
+              </div>
+
+              <div className="p-5 rounded-2xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl">
+                <div className="text-xs font-mono text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                  <span>Operating Float</span>
+                  <Wallet className="h-4 w-4 text-indigo-400" />
+                </div>
+                <div className="text-2xl font-bold font-heading text-white">
+                  {estate?.agentFloat.formatted || "2.50 USDC"}
+                </div>
+                <p className="text-xs text-slate-400 mt-1">Agent Hot Wallet Balance</p>
+              </div>
+
+              <div className="p-5 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.03] backdrop-blur-xl">
+                <div className="text-xs font-mono text-emerald-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                  <span>Customer Earmark (I1)</span>
+                  <Lock className="h-4 w-4 text-emerald-400" />
+                </div>
+                <div className="text-2xl font-bold font-heading text-emerald-400">
+                  {estate?.earmarked.formatted || "1.20 USDC"}
+                </div>
+                <p className="text-xs text-slate-400 mt-1">Guaranteed client refund reserve</p>
+              </div>
+            </div>
+
+            {/* Heartbeat Status & Lifecycle Visualizer */}
+            <div className="p-6 rounded-2xl border border-white/[0.08] bg-white/[0.02]">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <div>
+                  <h3 className="font-heading font-bold text-lg text-white">Owner Heartbeat Mechanism</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    The agent monitors the owner's liveness on-chain. If heartbeats cease, the estate degrades automatically.
+                  </p>
+                </div>
+                <Button
+                  onClick={() => triggerAction("heartbeat")}
+                  disabled={actionLoading || estate?.isSettled}
+                  className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold px-4 rounded-xl text-xs h-9 flex items-center gap-2"
+                >
+                  <Heart className="h-4 w-4 fill-current animate-pulse text-slate-950" />
+                  Send Heartbeat ("I'm Alive")
+                </Button>
+              </div>
+
+              {/* 5 Stage Progress */}
+              <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
+                {(["ACTIVE", "WARNING", "WINDING_DOWN", "EXECUTABLE", "SETTLED"] as Stage[]).map((s) => {
+                  const isCurrent = s === stage;
+                  const meta = STAGES_META[s];
+                  return (
+                    <div
+                      key={s}
+                      className={cn(
+                        "p-3 rounded-xl border text-xs transition-all",
+                        isCurrent
+                          ? `${meta.badge} ring-1 ring-white/20 font-bold`
+                          : "bg-white/[0.02] border-white/[0.05] text-slate-400 opacity-60"
+                      )}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span>{meta.label}</span>
+                        {isCurrent && <span className="h-1.5 w-1.5 rounded-full bg-current animate-ping" />}
+                      </div>
+                      <p className="text-[11px] font-normal text-slate-400 leading-tight">{meta.desc}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* On-Chain Will & Heirs Allocation */}
+            <div className="p-6 rounded-2xl border border-white/[0.08] bg-white/[0.02] flex flex-col gap-4">
+              <div>
+                <h3 className="font-heading font-bold text-lg text-white">On-Chain Will & Heirs Specification</h3>
+                <p className="text-xs text-slate-400">
+                  When settled, leftover funds are trustlessly distributed according to these signed basis points.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.03] border border-white/[0.06] text-xs font-mono">
+                <span className="text-slate-400">Will Hash (Keccak256):</span>
+                <span className="text-indigo-300 break-all">{estate?.willHash}</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                {estate?.heirs.map((heir, idx) => (
+                  <div key={idx} className="p-3.5 rounded-xl border border-white/[0.06] bg-white/[0.02] flex flex-col gap-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-white">{heir.label || `Heir ${idx + 1}`}</span>
+                      <span className="text-indigo-400 font-mono font-bold">{(heir.bps / 100).toFixed(0)}% ({heir.bps} bps)</span>
+                    </div>
+                    <span className="text-[11px] font-mono text-slate-400 truncate">{heir.address}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 3: STANDING BRIEFS (Client Jobs, Delivery & Refund Reserves)          */}
+        {/* ========================================================================= */}
+        {activeTab === "briefs" && (
+          <div className="flex flex-col gap-6 max-w-4xl mx-auto w-full">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/[0.06] pb-4">
+              <div>
+                <h2 className="font-heading font-bold text-xl text-white">Client Standing Briefs</h2>
+                <p className="text-xs text-slate-400">
+                  Prepaid daily research digests. Unearned remainder is protected by Invariant I1 and automatically refunded upon wind-down.
+                </p>
+              </div>
+              <Button
+                onClick={() => setShowCommissionModal(true)}
+                disabled={stage !== "ACTIVE"}
+                className={cn(
+                  "h-9 px-4 rounded-xl text-xs font-semibold",
+                  stage === "ACTIVE"
+                    ? "bg-indigo-600 hover:bg-indigo-500 text-white"
+                    : "bg-white/[0.05] text-slate-500 cursor-not-allowed"
+                )}
+              >
+                <Plus className="h-4 w-4 mr-1.5" /> Commission Brief
+              </Button>
+            </div>
+
+            {/* Modal Drawer to Commission Brief */}
+            {showCommissionModal && (
+              <div className="p-5 rounded-2xl border border-indigo-500/30 bg-slate-900/90 backdrop-blur-xl flex flex-col gap-4 text-xs">
+                <h3 className="font-heading font-bold text-base text-white">Commission a Standing Research Brief</h3>
+                <div>
+                  <label className="text-slate-400 mb-1 block">Topic:</label>
+                  <Input
+                    value={newTopic}
+                    onChange={(e) => setNewTopic(e.target.value)}
+                    placeholder="e.g. Base Sepolia Cross-Chain Relayer Latency"
+                    className="h-10 rounded-xl bg-white/[0.04] border-white/[0.08]"
                   />
                 </div>
-                <div className="flex-1">
-                  <label className="text-muted-foreground mb-1 block">Upfront Price:</label>
-                  <div className="h-8 flex items-center px-3 rounded-sm bg-muted/40 border border-border/40 font-bold text-[#C8E850]">
-                    {(newDays * 0.1).toFixed(2)} USDC
+                <div className="flex items-center gap-4">
+                  <div className="flex-1">
+                    <label className="text-slate-400 mb-1 block">Duration (Days):</label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={30}
+                      value={newDays}
+                      onChange={(e) => setNewDays(Number(e.target.value))}
+                      className="h-10 rounded-xl bg-white/[0.04] border-white/[0.08]"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-slate-400 mb-1 block">Prepaid Price (0.10 USDC/day):</label>
+                    <div className="h-10 flex items-center px-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06] font-mono text-emerald-400 font-bold">
+                      {(newDays * 0.1).toFixed(2)} USDC
+                    </div>
                   </div>
                 </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowCommissionModal(false)}
+                    className="h-8 rounded-lg text-slate-400"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleCommissionBrief}
+                    disabled={actionLoading}
+                    className="h-8 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium"
+                  >
+                    Confirm & Prepay
+                  </Button>
+                </div>
               </div>
-              <div className="flex justify-end gap-2 pt-1">
-                <Button variant="ghost" size="sm" onClick={() => setShowNewBriefModal(false)} className="h-7 text-xs">
-                  Cancel
-                </Button>
-                <Button size="sm" onClick={handleCommissionBrief} disabled={actionLoading} className="h-7 text-xs bg-[#C8E850] text-[#0A0A0A] font-bold">
-                  Confirm & Prepay
-                </Button>
-              </div>
-            </div>
-          )}
+            )}
 
-          {/* List of Active Briefs */}
-          <ScrollArea className="h-[480px] pr-2">
-            <div className="flex flex-col gap-3">
-              {briefs.map((brief) => {
-                const pct = Math.round((brief.delivered / brief.totalDays) * 100);
+            {/* List of Briefs */}
+            <div className="grid grid-cols-1 gap-4">
+              {briefs.map((b) => {
+                const pct = Math.round((b.delivered / b.totalDays) * 100);
                 return (
                   <div
-                    key={brief.id}
-                    className="p-3.5 rounded-sm border border-border/60 bg-card/40 hover:bg-card/70 transition-all font-mono text-xs flex flex-col gap-2"
+                    key={b.id}
+                    className="p-5 rounded-2xl border border-white/[0.07] bg-white/[0.02] hover:bg-white/[0.03] transition-all flex flex-col gap-3"
                   >
-                    <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="font-bold text-foreground text-sm font-sans">{brief.topic}</div>
-                        <div className="text-[11px] text-muted-foreground">
-                          Client: {brief.clientAddress.slice(0, 6)}...{brief.clientAddress.slice(-4)} · ID: {brief.id}
-                        </div>
+                        <h4 className="font-heading font-bold text-base text-white">{b.topic}</h4>
+                        <span className="text-xs font-mono text-slate-400">
+                          Client: {b.clientAddress.slice(0, 6)}...{b.clientAddress.slice(-4)} · ID: {b.id}
+                        </span>
                       </div>
-                      <Badge variant="outline" className="text-[10px] shrink-0 uppercase">
-                        {brief.status}
+                      <Badge variant="outline" className="text-xs font-mono uppercase bg-white/[0.04]">
+                        {b.status}
                       </Badge>
                     </div>
 
                     {/* Progress Bar */}
                     <div>
-                      <div className="flex justify-between text-[11px] text-muted-foreground mb-1">
-                        <span>Delivery: {brief.delivered} of {brief.totalDays} Days ({pct}%)</span>
-                        <span className="text-[#C8E850] font-bold">{brief.prepaidUSDC}</span>
+                      <div className="flex justify-between text-xs text-slate-400 mb-1.5 font-mono">
+                        <span>Progress: {b.delivered} of {b.totalDays} Days Delivered ({pct}%)</span>
+                        <span className="text-white font-semibold">{b.prepaidUSDC}</span>
                       </div>
-                      <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div className="h-full bg-[#C8E850] transition-all" style={{ width: `${pct}%` }} />
+                      <div className="w-full h-2 bg-white/[0.06] rounded-full overflow-hidden">
+                        <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
                       </div>
                     </div>
 
-                    {/* Unearned Refund Reserve */}
-                    <div className="flex items-center justify-between pt-1 border-t border-border/40 text-[11px]">
-                      <span className="text-muted-foreground">Refund if wound down:</span>
-                      <span className="font-bold text-amber-400">{brief.refundIfCancelled}</span>
+                    <div className="pt-2 border-t border-white/[0.05] flex items-center justify-between text-xs font-mono">
+                      <span className="text-slate-400">Refund reserve if wound down:</span>
+                      <span className="text-emerald-400 font-bold">{b.refundIfCancelled}</span>
                     </div>
-
-                    {/* Latest Digest Preview */}
-                    {brief.latestDigest && (
-                      <div className="p-2 rounded-xs bg-background/60 border border-border/40 text-[11px] text-muted-foreground">
-                        <strong className="text-foreground">{brief.latestDigest.title}</strong>
-                        <p className="line-clamp-2 mt-0.5">{brief.latestDigest.summary}</p>
-                      </div>
-                    )}
                   </div>
                 );
               })}
             </div>
-          </ScrollArea>
-        </div>
-
-        {/* RIGHT COLUMN: AGENT CHAT & TOOL INSPECTOR (7 COLS) */}
-        <div className="lg:col-span-7 flex flex-col gap-3">
-          <div className="flex items-center justify-between border-b border-border/40 pb-2">
-            <div className="flex items-center gap-2">
-              <Bot className="h-5 w-5 text-[#C8E850]" />
-              <h2 className="font-heading text-lg font-bold uppercase tracking-tight">Wills Analyst Agent</h2>
-              <span className="text-[11px] font-mono text-muted-foreground">Gemini Flash · Stage Gated</span>
-            </div>
-
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setMessages([{ role: "agent", text: "Conversation history cleared. Ready for your prompt." }])}
-              className="h-7 text-xs font-mono text-muted-foreground hover:text-foreground"
-            >
-              <RotateCcw className="h-3 w-3 mr-1" /> Clear
-            </Button>
           </div>
+        )}
+      </main>
 
-          {/* Stage-Gated Tool Authority Strip */}
-          <div className="p-2.5 rounded-sm border border-border/60 bg-card/40 flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
-            <span className="text-muted-foreground mr-1 flex items-center gap-1">
-              <Terminal className="h-3.5 w-3.5 text-[#C8E850]" /> Tool Status:
-            </span>
-            {tools.map((t) => {
-              const allowed = t.isAllowed;
-              return (
-                <span
-                  key={t.name}
-                  className={cn(
-                    "px-2 py-0.5 rounded-xs flex items-center gap-1 transition-colors",
-                    allowed
-                      ? "bg-[#C8E850]/10 text-[#C8E850] border border-[#C8E850]/30"
-                      : "bg-muted text-muted-foreground line-through opacity-60 border border-border/40"
-                  )}
-                  title={`${t.name}: ${t.description}`}
-                >
-                  {allowed ? <Unlock className="h-2.5 w-2.5" /> : <Lock className="h-2.5 w-2.5" />}
-                  {t.name}
-                </span>
-              );
-            })}
-          </div>
-
-          {/* Chat Messages Log */}
-          <ScrollArea className="h-[430px] rounded-md border border-border/80 bg-background/80 p-4">
-            <div className="flex flex-col gap-4 font-mono text-xs">
-              {messages.map((m, idx) => (
-                <div
-                  key={idx}
-                  className={cn(
-                    "flex flex-col gap-2 rounded-sm p-3 max-w-[90%]",
-                    m.role === "user"
-                      ? "self-end bg-[#C8E850]/15 border border-[#C8E850]/30 text-foreground"
-                      : "self-start bg-card/90 border border-border/60 text-foreground"
-                  )}
-                >
-                  <div className="flex items-center gap-2 text-[10px] uppercase font-bold text-muted-foreground">
-                    {m.role === "user" ? "You (Client / Principal)" : "Wills Analyst"}
-                  </div>
-
-                  <div className="whitespace-pre-wrap leading-relaxed font-sans text-sm">{m.text}</div>
-
-                  {/* Tool execution steps */}
-                  {m.steps && m.steps.length > 0 && (
-                    <div className="mt-2 flex flex-col gap-1.5 pt-2 border-t border-border/40">
-                      {m.steps.map((s, stepIdx) => (
-                        <div
-                          key={stepIdx}
-                          className="rounded-xs bg-background/90 p-2 border border-border/40 font-mono text-[11px]"
-                        >
-                          <div className="flex items-center justify-between text-muted-foreground mb-1">
-                            <span className="text-[#C8E850] font-bold">⚡ tool: {s.tool}</span>
-                            {s.error && <span className="text-rose-400 font-bold">FAILED / BLOCKED</span>}
-                          </div>
-                          {s.args && Object.keys(s.args).length > 0 && (
-                            <div className="text-muted-foreground">
-                              args: <span className="text-foreground">{JSON.stringify(s.args)}</span>
-                            </div>
-                          )}
-                          <div className="text-muted-foreground mt-0.5">
-                            result: <span className="text-foreground">{JSON.stringify(s.result)}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              {thinking && (
-                <div className="self-start flex items-center gap-2 p-3 rounded-sm bg-card/80 border border-border/40 text-muted-foreground font-mono text-xs">
-                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-[#C8E850]" />
-                  <span>Agent analyzing estate parameters and tools...</span>
-                </div>
-              )}
-              <div ref={bottomRef} />
-            </div>
-          </ScrollArea>
-
-          {/* Prompt Suggestions */}
-          <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
-            <span className="text-muted-foreground mr-1">Try:</span>
-            <button
-              onClick={() => send("What is your current estate stage and funds?")}
-              className="px-2 py-1 rounded-xs bg-card border border-border/60 hover:border-[#C8E850]/50 transition-colors text-foreground"
-            >
-              "What is your estate status?"
-            </button>
-            <button
-              onClick={() => send("List all active standing briefs")}
-              className="px-2 py-1 rounded-xs bg-card border border-border/60 hover:border-[#C8E850]/50 transition-colors text-foreground"
-            >
-              "List standing briefs"
-            </button>
-            <button
-              onClick={() => send("What's the weather in Mumbai?")}
-              className="px-2 py-1 rounded-xs bg-card border border-border/60 hover:border-[#C8E850]/50 transition-colors text-foreground"
-            >
-              "Get weather (outbound paid API)"
-            </button>
-          </div>
-
-          {/* Chat Input Bar */}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              send(input);
-            }}
-            className="flex items-center gap-2"
-          >
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask the Wills Analyst about its estate, briefs, or tools..."
-              disabled={thinking}
-              className="bg-card border-border/80 font-mono text-xs h-10"
-            />
-            <Button
-              type="submit"
-              disabled={thinking || !input.trim()}
-              className="bg-[#C8E850] text-[#0A0A0A] hover:bg-[#C8E850]/90 font-bold px-4 h-10"
-            >
-              <SendHorizontal className="h-4 w-4" />
-            </Button>
-          </form>
-        </div>
-      </div>
-
-      {/* ─── 6. PROTOCOL WILL & HEIRS SPECIFICATION BAR ─── */}
-      <footer className="mt-4 pt-4 border-t border-border/40 grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs text-muted-foreground">
-        <div className="flex flex-col gap-1">
-          <span className="font-bold text-foreground uppercase">On-Chain Will Hash:</span>
-          <span className="break-all text-[11px] bg-card p-2 rounded-xs border border-border/40">
-            {estate?.willHash || "0x8fa4029283f5127efab01928374a5e01b443019d93a82745e7839201f8490a2c"}
-          </span>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <span className="font-bold text-foreground uppercase">Designated Heirs:</span>
-          <div className="flex flex-col gap-1 text-[11px]">
-            <span>1. Research Lab (0x7099...79C8): <strong>60% (6,000 bps)</strong></span>
-            <span>2. Client Liquidity Pool (0x3C44...93BC): <strong>40% (4,000 bps)</strong></span>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <span className="font-bold text-foreground uppercase">Technical Honesty:</span>
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Testnet demonstration on Base Sepolia. The system detects missed heartbeats, not biological death.
-            Graceful degradation protects customer prepayments before on-chain settlement.
-          </p>
-        </div>
+      {/* ─── MINIMAL FOOTER ─── */}
+      <footer className="border-t border-white/[0.06] py-4 px-4 text-center text-xs text-slate-500 font-mono">
+        <span>WILLS · Autonomous Agent Estate Protocol · Base Sepolia Testnet</span>
       </footer>
-    </main>
+    </div>
   );
 }
