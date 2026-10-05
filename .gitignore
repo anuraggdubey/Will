@@ -1,0 +1,96 @@
+# ==============================================================================
+# Private Project Specs & Starter Prompts (DO NOT PUSH)
+# ==============================================================================
+WILLS_SPEC.md
+wills_spec.md
+*wills_spec*
+*WILLS_SPEC*
+docs/SPEC.md
+docs/*spec*
+docs/*SPEC*
+*SPEC.md
+*spec.md
+agentmaxxin_ Build an AI Agent with Its Own Wallet.md
+*agentmaxxin*build*.md
+
+# ==============================================================================
+# Security, Private Keys & Environment Variables
+# ==============================================================================
+.env
+.env*.local
+.env.production
+.env.staging
+.env.backup
+.agent-wallet.json
+*.pem
+*.key
+*.keystore
+
+# ==============================================================================
+# Dependencies
+# ==============================================================================
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# ==============================================================================
+# Next.js & Build Outputs
+# ==============================================================================
+/.next/
+/out/
+build/
+dist/
+
+# ==============================================================================
+# Local Databases & SQLite
+# ==============================================================================
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.db
+*.db-journal
+local.db
+
+# ==============================================================================
+# Smart Contracts / Foundry Build Artifacts
+# ==============================================================================
+cache/
+contracts/cache/
+contracts/out/
+broadcast/
+contracts/broadcast/
+
+# ==============================================================================
+# TypeScript & Debug Logs
+# ==============================================================================
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ==============================================================================
+# OS & Editor Files
+# ==============================================================================
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+
+# ==============================================================================
+# Temporary / Scratch Artifacts
+# ==============================================================================
+package/
+*.tgz
+.system_generated/
