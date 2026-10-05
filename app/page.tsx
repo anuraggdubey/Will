@@ -3,11 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Activity,
-  AlertCircle,
+  ArrowUpRight,
   Bot,
   Check,
   ChevronDown,
-  ChevronUp,
+  ChevronRight,
   Clock,
   Compass,
   Copy,
@@ -16,6 +16,7 @@ import {
   FileText,
   Heart,
   HelpCircle,
+  Layers,
   Lock,
   MessageSquare,
   Plus,
@@ -28,18 +29,18 @@ import {
   Sparkles,
   Terminal,
   Unlock,
+  User,
   Wallet,
   Zap,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
 type Stage = "ACTIVE" | "WARNING" | "WINDING_DOWN" | "EXECUTABLE" | "SETTLED";
-type ActiveTab = "chat" | "vault" | "briefs";
+type NavigationTab = "chat" | "vault" | "briefs";
 
 interface EstateData {
   stage: Stage;
@@ -92,71 +93,75 @@ interface Message {
   error?: boolean;
 }
 
-const STAGES_META: Record<
+const STAGE_CONFIG: Record<
   Stage,
-  { label: string; badge: string; border: string; glow: string; desc: string }
+  { label: string; dotColor: string; badgeBg: string; badgeBorder: string; badgeText: string; description: string }
 > = {
   ACTIVE: {
     label: "Active",
-    badge: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
-    border: "border-emerald-500/40",
-    glow: "shadow-emerald-500/10",
-    desc: "Full autonomy · Accepting briefs & servicing digests",
+    dotColor: "bg-emerald-400",
+    badgeBg: "bg-emerald-500/10",
+    badgeBorder: "border-emerald-500/25",
+    badgeText: "text-emerald-400",
+    description: "Heartbeat healthy · Full operational autonomy",
   },
   WARNING: {
     label: "Warning",
-    badge: "bg-amber-500/10 text-amber-400 border-amber-500/30",
-    border: "border-amber-500/40",
-    glow: "shadow-amber-500/10",
-    desc: "Missed heartbeat · Outbound allowance throttled to 25%",
+    dotColor: "bg-amber-400",
+    badgeBg: "bg-amber-500/10",
+    badgeBorder: "border-amber-500/25",
+    badgeText: "text-amber-400",
+    description: "Missed heartbeat · Outbound spend throttled to 25%",
   },
   WINDING_DOWN: {
     label: "Winding Down",
-    badge: "bg-rose-500/10 text-rose-400 border-rose-500/30",
-    border: "border-rose-500/40",
-    glow: "shadow-rose-500/10",
-    desc: "Critical lapse · Intake frozen · Auto-refunds active",
+    dotColor: "bg-rose-400",
+    badgeBg: "bg-rose-500/10",
+    badgeBorder: "border-rose-500/25",
+    badgeText: "text-rose-400",
+    description: "Owner lapse · Work frozen · Client refunds active",
   },
   EXECUTABLE: {
     label: "Executable",
-    badge: "bg-purple-500/10 text-purple-400 border-purple-500/30",
-    border: "border-purple-500/40",
-    glow: "shadow-purple-500/10",
-    desc: "Timelock reached · Permissionless executeWill() ready",
+    dotColor: "bg-violet-400",
+    badgeBg: "bg-violet-500/10",
+    badgeBorder: "border-violet-500/25",
+    badgeText: "text-violet-400",
+    description: "Timelock expired · Ready for permissionless settlement",
   },
   SETTLED: {
     label: "Settled",
-    badge: "bg-blue-500/10 text-blue-400 border-blue-500/30",
-    border: "border-blue-500/40",
-    glow: "shadow-blue-500/10",
-    desc: "Will executed · Residual funds partitioned to heirs",
+    dotColor: "bg-sky-400",
+    badgeBg: "bg-sky-500/10",
+    badgeBorder: "border-sky-500/25",
+    badgeText: "text-sky-400",
+    description: "Will executed · Residual funds disbursed to heirs",
   },
 };
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>("chat");
+  const [tab, setTab] = useState<NavigationTab>("chat");
   const [estate, setEstate] = useState<EstateData | null>(null);
   const [briefs, setBriefs] = useState<StandingBriefItem[]>([]);
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [wallet, setWallet] = useState<{ address: string | null; balance?: string }>({ address: null });
-  const [showWarpDrawer, setShowWarpDrawer] = useState(false);
-  const [showCommissionModal, setShowCommissionModal] = useState(false);
-  const [expandedSteps, setExpandedSteps] = useState<Record<number, boolean>>({});
-
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "agent",
-      text: "Hello. I am the Wills Analyst, an autonomous research agent operating under an on-chain estate. My funds sit in a smart vault on Base Sepolia gated by my owner's heartbeat. If my owner goes silent, my spending throttles, new work freezes, and clients receive refunds before leftover assets flow to heirs. How can I assist you today?",
+      text: "I am the Wills Analyst, an autonomous intelligence operating with an on-chain estate on Base Sepolia.\n\nI deliver daily research briefs to paying clients, guarded by my owner's heartbeat. If my owner lapses, my spending throttles, new work freezes, and clients receive refunds before leftover assets flow to heirs.\n\nAsk me anything about my estate status, standing briefs, or research capabilities.",
     },
   ]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [showTimeModal, setShowTimeModal] = useState(false);
+  const [showBriefModal, setShowBriefModal] = useState(false);
+  const [openStepIndices, setOpenStepIndices] = useState<Record<number, boolean>>({});
 
-  // New brief state
-  const [newTopic, setNewTopic] = useState("");
-  const [newDays, setNewDays] = useState(7);
+  // Brief creation form
+  const [topicInput, setTopicInput] = useState("");
+  const [daysInput, setDaysInput] = useState(7);
 
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -164,9 +169,7 @@ export default function Home() {
     try {
       const res = await fetch("/api/estate");
       if (res.ok) setEstate(await res.json());
-    } catch (e) {
-      console.error(e);
-    }
+    } catch {}
   };
 
   const loadBriefs = async () => {
@@ -176,9 +179,7 @@ export default function Home() {
         const d = await res.json();
         setBriefs(d.briefs || []);
       }
-    } catch (e) {
-      console.error(e);
-    }
+    } catch {}
   };
 
   const loadAgentStatus = async () => {
@@ -188,18 +189,14 @@ export default function Home() {
         const d = await res.json();
         setTools(d.tools || []);
       }
-    } catch (e) {
-      console.error(e);
-    }
+    } catch {}
   };
 
   const loadWallet = async () => {
     try {
       const res = await fetch("/api/wallet");
       if (res.ok) setWallet(await res.json());
-    } catch (e) {
-      console.error(e);
-    }
+    } catch {}
   };
 
   const refreshAll = () => {
@@ -219,7 +216,7 @@ export default function Home() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, thinking]);
 
-  const copyText = (text: string, id: string) => {
+  const copy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
     setCopied(id);
     setTimeout(() => setCopied(null), 2000);
@@ -238,35 +235,29 @@ export default function Home() {
         setEstate(updated);
         loadAgentStatus();
       }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setActionLoading(false);
-    }
+    } catch {}
+    setActionLoading(false);
   };
 
-  const handleCommissionBrief = async () => {
-    if (!newTopic.trim()) return;
+  const commissionBrief = async () => {
+    if (!topicInput.trim()) return;
     setActionLoading(true);
     try {
       const res = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: newTopic, days: newDays }),
+        body: JSON.stringify({ topic: topicInput, days: daysInput }),
       });
       if (res.ok) {
-        setShowCommissionModal(false);
-        setNewTopic("");
+        setShowBriefModal(false);
+        setTopicInput("");
         refreshAll();
       } else {
         const err = await res.json();
-        alert(err.error || "Failed");
+        alert(err.error || "Failed to commission brief");
       }
-    } catch (e: any) {
-      alert(e.message || "Failed");
-    } finally {
-      setActionLoading(false);
-    }
+    } catch {}
+    setActionLoading(false);
   };
 
   const send = async (text: string) => {
@@ -295,420 +286,399 @@ export default function Home() {
     } catch {
       setMessages((m) => [
         ...m,
-        { role: "agent", text: "Connection error: could not contact agent runtime.", error: true },
+        { role: "agent", text: "Connection error: failed to communicate with agent runtime.", error: true },
       ]);
     }
     setThinking(false);
   };
 
   const stage = estate?.stage || "ACTIVE";
-  const stageMeta = STAGES_META[stage];
+  const stageInfo = STAGE_CONFIG[stage];
 
   return (
-    <div className="min-h-screen text-slate-100 flex flex-col justify-between selection:bg-indigo-500/20">
-      {/* ─── TOP NAVBAR (Clean, uncluttered, focused) ─── */}
-      <header className="sticky top-0 z-30 border-b border-white/[0.07] bg-[#0B0D13]/80 backdrop-blur-xl">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-          {/* Logo & Status */}
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
-              <Shield className="h-4.5 w-4.5" />
+    <div className="flex h-screen w-screen overflow-hidden bg-[#090A0E] text-slate-200 font-sans selection:bg-indigo-500/25 selection:text-white">
+      {/* ─── LEFT SIDEBAR (Linear/Cursor Style) ─── */}
+      <aside className="w-64 shrink-0 border-r border-white/[0.06] bg-[#0C0E14] flex flex-col justify-between p-4 z-20">
+        <div className="flex flex-col gap-6">
+          {/* Brand header */}
+          <div className="flex items-center gap-2.5 px-2 pt-1">
+            <div className="h-7 w-7 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-600/30">
+              <Shield className="h-4 w-4" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="font-heading font-bold text-base tracking-tight text-white">WILLS</span>
-                <span className={cn("text-[11px] font-mono px-2 py-0.5 rounded-full border", stageMeta.badge)}>
-                  ● {stageMeta.label}
+              <div className="font-heading font-bold text-sm tracking-tight text-white flex items-center gap-1.5">
+                WILLS
+                <span className="text-[10px] font-mono font-medium px-1.5 py-0.5 rounded bg-white/[0.07] text-slate-400">
+                  v0.1
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Center Tabs: Clear Segregation of Concerns */}
-          <nav className="flex items-center bg-white/[0.04] p-1 rounded-xl border border-white/[0.06] text-xs font-medium">
+          {/* Navigation Links */}
+          <nav className="flex flex-col gap-1 text-xs font-medium">
             <button
-              onClick={() => setActiveTab("chat")}
+              onClick={() => setTab("chat")}
               className={cn(
-                "flex items-center gap-2 px-3.5 py-1.5 rounded-lg transition-all",
-                activeTab === "chat" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-white"
+                "flex items-center gap-2.5 px-3 py-2 rounded-lg transition-all",
+                tab === "chat"
+                  ? "bg-white/[0.08] text-white shadow-sm font-semibold"
+                  : "text-slate-400 hover:text-white hover:bg-white/[0.03]"
               )}
             >
-              <MessageSquare className="h-3.5 w-3.5" />
+              <MessageSquare className="h-4 w-4 text-indigo-400" />
               <span>Analyst Chat</span>
             </button>
+
             <button
-              onClick={() => setActiveTab("vault")}
+              onClick={() => setTab("vault")}
               className={cn(
-                "flex items-center gap-2 px-3.5 py-1.5 rounded-lg transition-all",
-                activeTab === "vault" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-white"
+                "flex items-center gap-2.5 px-3 py-2 rounded-lg transition-all",
+                tab === "vault"
+                  ? "bg-white/[0.08] text-white shadow-sm font-semibold"
+                  : "text-slate-400 hover:text-white hover:bg-white/[0.03]"
               )}
             >
-              <Shield className="h-3.5 w-3.5" />
+              <Layers className="h-4 w-4 text-emerald-400" />
               <span>Estate Vault</span>
             </button>
+
             <button
-              onClick={() => setActiveTab("briefs")}
+              onClick={() => setTab("briefs")}
               className={cn(
-                "flex items-center gap-2 px-3.5 py-1.5 rounded-lg transition-all",
-                activeTab === "briefs" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-white"
+                "flex items-center justify-between px-3 py-2 rounded-lg transition-all",
+                tab === "briefs"
+                  ? "bg-white/[0.08] text-white shadow-sm font-semibold"
+                  : "text-slate-400 hover:text-white hover:bg-white/[0.03]"
               )}
             >
-              <FileText className="h-3.5 w-3.5" />
-              <span>Standing Briefs ({briefs.length})</span>
+              <div className="flex items-center gap-2.5">
+                <FileText className="h-4 w-4 text-amber-400" />
+                <span>Standing Briefs</span>
+              </div>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-white/[0.06] text-slate-400">
+                {briefs.length}
+              </span>
             </button>
           </nav>
 
-          {/* Right Action: Heartbeat & Time Drawer */}
-          <div className="flex items-center gap-2.5">
-            <Button
-              onClick={() => triggerAction("heartbeat")}
-              disabled={actionLoading || estate?.isSettled}
-              size="sm"
-              className="h-8 px-3 rounded-lg text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-slate-950 flex items-center gap-1.5 shadow-sm transition-all"
-            >
-              <Heart className="h-3.5 w-3.5 fill-current animate-pulse text-slate-950" />
-              <span className="hidden sm:inline">I'm Alive</span>
-            </Button>
+          {/* Quick Estate Status Card */}
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-xs flex flex-col gap-2">
+            <div className="flex items-center justify-between text-[11px] text-slate-400">
+              <span>LIFECYCLE</span>
+              <span className={cn("px-2 py-0.5 rounded-full border text-[10px] font-mono", stageInfo.badgeBg, stageInfo.badgeBorder, stageInfo.badgeText)}>
+                ● {stageInfo.label}
+              </span>
+            </div>
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowWarpDrawer(!showWarpDrawer)}
-              className={cn(
-                "h-8 px-2.5 rounded-lg text-xs border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.07] text-slate-300 flex items-center gap-1.5",
-                showWarpDrawer && "border-indigo-500/50 bg-indigo-500/10 text-indigo-300"
-              )}
-              title="Time Machine / Fast-Forward Simulation"
-            >
-              <FastForward className="h-3.5 w-3.5 text-indigo-400" />
-              <span className="hidden md:inline">Time Warp</span>
-            </Button>
-          </div>
-        </div>
+            <div className="flex justify-between items-baseline pt-1">
+              <span className="text-[11px] text-slate-400">Vault Balance:</span>
+              <span className="font-mono font-semibold text-white">{estate?.vaultBalance.formatted || "25.00 USDC"}</span>
+            </div>
 
-        {/* ─── TIME WARP DRAWER (Clean popdown for testing stage machine) ─── */}
-        {showWarpDrawer && (
-          <div className="border-t border-white/[0.06] bg-slate-950/95 py-3 px-4 backdrop-blur-2xl">
-            <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
-              <div className="flex items-center gap-2 text-slate-400">
-                <FastForward className="h-3.5 w-3.5 text-indigo-400" />
-                <span>Simulate Owner Inaction:</span>
-                <span className="text-slate-200">Elapsed {estate?.elapsed ?? 0}s</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() => triggerAction("warp", { seconds: 30 })}
-                  className="px-2.5 py-1 rounded-md bg-white/[0.05] hover:bg-white/[0.1] text-slate-200 border border-white/[0.06]"
-                >
-                  +30s
-                </button>
-                <button
-                  onClick={() => triggerAction("warp", { seconds: 90 })}
-                  className="px-2.5 py-1 rounded-md bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                >
-                  +90s (Warning)
-                </button>
-                <button
-                  onClick={() => triggerAction("warp", { seconds: 180 })}
-                  className="px-2.5 py-1 rounded-md bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30"
-                >
-                  +180s (Wind Down)
-                </button>
-                <button
-                  onClick={() => triggerAction("warp", { seconds: 300 })}
-                  className="px-2.5 py-1 rounded-md bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30"
-                >
-                  +300s (Executable)
-                </button>
-                <button
-                  onClick={() => triggerAction("reset")}
-                  className="px-2.5 py-1 rounded-md bg-white/[0.05] hover:bg-white/[0.1] text-slate-400 border border-white/[0.06] flex items-center gap-1"
-                >
-                  <RotateCcw className="h-3 w-3" /> Reset
-                </button>
-
-                {stage === "EXECUTABLE" && !estate?.isSettled && (
-                  <button
-                    onClick={() => triggerAction("executeWill")}
-                    className="px-3 py-1 rounded-md bg-purple-600 hover:bg-purple-500 text-white font-semibold flex items-center gap-1 shadow-lg shadow-purple-600/30 animate-pulse"
-                  >
-                    <Zap className="h-3 w-3 fill-current" /> Execute Will
-                  </button>
-                )}
-              </div>
+            <div className="flex justify-between items-baseline">
+              <span className="text-[11px] text-slate-400">Next Stage in:</span>
+              <span className="font-mono text-emerald-400 font-medium">
+                {estate?.secondsUntilNext !== null ? `${estate?.secondsUntilNext}s` : "Terminal"}
+              </span>
             </div>
           </div>
-        )}
-      </header>
+        </div>
 
-      {/* ─── STAGE PROGRESS STRIP (Sleek, minimal, informative) ─── */}
-      <div className="border-b border-white/[0.06] bg-slate-900/30 py-2 px-4 text-xs">
-        <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-slate-400 text-[11px] uppercase tracking-wider font-mono">Stage:</span>
-            <span className="font-medium text-slate-200">{stageMeta.desc}</span>
-          </div>
+        {/* Sidebar Footer: Heartbeat & Wallet */}
+        <div className="flex flex-col gap-2 pt-3 border-t border-white/[0.06]">
+          {/* I'M ALIVE Button */}
+          <Button
+            onClick={() => triggerAction("heartbeat")}
+            disabled={actionLoading || estate?.isSettled}
+            className="w-full h-9 rounded-lg text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-slate-950 flex items-center justify-center gap-2 transition-all shadow-sm"
+          >
+            <Heart className="h-3.5 w-3.5 fill-current animate-pulse text-slate-950" />
+            <span>I'm Alive (Heartbeat)</span>
+          </Button>
 
-          <div className="flex items-center gap-4 text-slate-400 font-mono text-[11px]">
-            {estate?.secondsUntilNext !== null ? (
-              <span>Next transition in: <strong className="text-white">{estate?.secondsUntilNext}s</strong></span>
-            ) : (
-              <span className="text-purple-400">Terminal stage reached</span>
-            )}
-            <span>·</span>
-            <span>Vault: <strong className="text-emerald-400">{estate?.vaultBalance.formatted}</strong></span>
+          {/* Time Machine Popover Trigger */}
+          <button
+            onClick={() => setShowTimeModal(true)}
+            className="w-full h-8 px-2.5 rounded-lg text-[11px] font-mono text-slate-400 hover:text-white bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] flex items-center justify-center gap-1.5 transition-colors"
+          >
+            <FastForward className="h-3 w-3 text-indigo-400" />
+            <span>Simulation Time Warp</span>
+          </button>
+
+          {/* Agent Wallet EOA */}
+          <div className="flex items-center justify-between px-2 py-1 text-[11px] font-mono text-slate-500">
+            <span>Agent EOA:</span>
+            <span className="text-slate-300">
+              {wallet.address ? `${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}` : "Testnet"}
+            </span>
           </div>
         </div>
-      </div>
+      </aside>
 
-      {/* ─── MAIN CONTENT VIEW (Tabs switch gracefully) ─── */}
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 w-full flex-1 flex flex-col">
-        {/* ========================================================================= */}
-        {/* TAB 1: AGENT CHAT (Minimalist, elegant, conversational focus)             */}
-        {/* ========================================================================= */}
-        {activeTab === "chat" && (
-          <div className="flex flex-col flex-1 max-w-3xl mx-auto w-full gap-4">
-            {/* Stage Warning Notification if not Active */}
-            {stage !== "ACTIVE" && (
-              <div
-                className={cn(
-                  "p-3 rounded-xl border flex items-center justify-between gap-3 text-xs transition-all",
-                  stageMeta.badge
-                )}
+      {/* ─── MAIN CONTENT AREA ─── */}
+      <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#090A0E] relative">
+        {/* Subtle Top Navbar */}
+        <header className="h-14 shrink-0 border-b border-white/[0.06] flex items-center justify-between px-6 bg-[#090A0E]/80 backdrop-blur-xl z-10">
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-slate-400">Base Sepolia Protocol</span>
+            <span className="text-slate-600">/</span>
+            <span className="text-xs font-medium text-slate-200">
+              {tab === "chat" && "Autonomous Wills Analyst"}
+              {tab === "vault" && "On-Chain Smart Vault & Heirs"}
+              {tab === "briefs" && "Customer Standing Research Briefs"}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3 text-xs">
+            <span className="text-slate-400 hidden sm:inline">{stageInfo.description}</span>
+            {stage === "EXECUTABLE" && !estate?.isSettled && (
+              <button
+                onClick={() => triggerAction("executeWill")}
+                className="px-3 py-1 rounded-md bg-violet-600 hover:bg-violet-500 text-white font-semibold text-xs animate-pulse flex items-center gap-1 shadow-md shadow-violet-600/30"
               >
+                <Zap className="h-3 w-3 fill-current" /> Settle Will
+              </button>
+            )}
+          </div>
+        </header>
+
+        {/* ─── TAB 1: CHAT TERMINAL (Centered, clean, distraction-free) ─── */}
+        {tab === "chat" && (
+          <div className="flex-1 flex flex-col justify-between max-w-3xl mx-auto w-full px-4 py-6 overflow-hidden">
+            {/* Stage Warning Notification if Degraded */}
+            {stage !== "ACTIVE" && (
+              <div className={cn("mb-3 px-4 py-2.5 rounded-xl border text-xs flex items-center justify-between gap-3 shrink-0", stageInfo.badgeBg, stageInfo.badgeBorder, stageInfo.badgeText)}>
                 <div className="flex items-center gap-2">
                   <ShieldAlert className="h-4 w-4 shrink-0" />
                   <span>
-                    <strong>Stage Constraint ({stage}):</strong> {stageMeta.desc}
+                    <strong>Stage Constraint ({stage}):</strong> {stageInfo.description}
                   </span>
                 </div>
                 <button
                   onClick={() => triggerAction("heartbeat")}
-                  className="px-2.5 py-1 rounded-md bg-white/10 hover:bg-white/20 text-white font-medium shrink-0"
+                  className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white text-[11px] font-medium"
                 >
-                  Send Heartbeat
+                  Reset Clock
                 </button>
               </div>
             )}
 
-            {/* Chat Conversation Scroll Area */}
-            <div className="rounded-2xl border border-white/[0.08] bg-slate-900/40 p-4 sm:p-6 flex-1 min-h-[500px] flex flex-col justify-between">
-              <div className="flex flex-col gap-5 overflow-y-auto max-h-[540px] pr-2">
-                {messages.map((m, idx) => (
+            {/* Conversation Stream */}
+            <div className="flex-1 overflow-y-auto pr-2 flex flex-col gap-4">
+              {messages.map((m, idx) => (
+                <div
+                  key={idx}
+                  className={cn(
+                    "flex flex-col gap-1.5 max-w-[88%] text-xs leading-relaxed",
+                    m.role === "user" ? "self-end items-end" : "self-start items-start"
+                  )}
+                >
+                  <div className="text-[10px] font-mono text-slate-500 px-1">
+                    {m.role === "user" ? "You" : "Wills Analyst"}
+                  </div>
+
                   <div
-                    key={idx}
                     className={cn(
-                      "flex flex-col gap-2 rounded-2xl p-4 max-w-[85%] text-sm leading-relaxed",
+                      "p-3.5 rounded-2xl whitespace-pre-wrap",
                       m.role === "user"
-                        ? "self-end bg-indigo-600/90 text-white rounded-br-xs shadow-md shadow-indigo-600/10"
-                        : "self-start bg-white/[0.04] border border-white/[0.07] text-slate-200 rounded-bl-xs"
+                        ? "bg-indigo-600 text-white rounded-br-xs"
+                        : "bg-white/[0.04] border border-white/[0.06] text-slate-200 rounded-bl-xs"
                     )}
                   >
-                    <div className="flex items-center justify-between text-[11px] font-mono opacity-60">
-                      <span>{m.role === "user" ? "You" : "Wills Analyst"}</span>
-                      {m.steps && m.steps.length > 0 && (
-                        <button
-                          onClick={() =>
-                            setExpandedSteps((prev) => ({ ...prev, [idx]: !prev[idx] }))
-                          }
-                          className="hover:opacity-100 flex items-center gap-1 text-indigo-300"
-                        >
-                          <span>{m.steps.length} tool {m.steps.length > 1 ? "calls" : "call"}</span>
-                          {expandedSteps[idx] ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                        </button>
+                    {m.text}
+                  </div>
+
+                  {/* Clean Tool Execution Pill */}
+                  {m.steps && m.steps.length > 0 && (
+                    <div className="flex flex-col gap-1 mt-1">
+                      <button
+                        onClick={() =>
+                          setOpenStepIndices((prev) => ({ ...prev, [idx]: !prev[idx] }))
+                        }
+                        className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.03] border border-white/[0.06] text-[10px] font-mono text-indigo-300 hover:bg-white/[0.06] transition-colors"
+                      >
+                        <Terminal className="h-3 w-3" />
+                        <span>Executed {m.steps.length} tool {m.steps.length > 1 ? "calls" : "call"}</span>
+                        {openStepIndices[idx] ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                      </button>
+
+                      {openStepIndices[idx] && (
+                        <div className="p-2.5 rounded-lg bg-black/40 border border-white/[0.06] flex flex-col gap-1.5 text-[11px] font-mono text-slate-400">
+                          {m.steps.map((s, sIdx) => (
+                            <div key={sIdx}>
+                              <div className="flex items-center justify-between text-indigo-400 font-semibold">
+                                <span>⚡ {s.tool}</span>
+                                {s.error && <span className="text-rose-400">Blocked</span>}
+                              </div>
+                              <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                                {JSON.stringify(s.result)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
-
-                    <div className="whitespace-pre-wrap">{m.text}</div>
-
-                    {/* Collapsible Tool Execution Details */}
-                    {m.steps && m.steps.length > 0 && expandedSteps[idx] && (
-                      <div className="mt-2 pt-2 border-t border-white/[0.08] flex flex-col gap-2 font-mono text-xs">
-                        {m.steps.map((s, stepIdx) => (
-                          <div key={stepIdx} className="bg-black/30 p-2 rounded-lg border border-white/[0.05]">
-                            <div className="flex items-center justify-between text-indigo-300 font-bold mb-1">
-                              <span>⚡ {s.tool}</span>
-                              {s.error && <span className="text-rose-400">Blocked / Failed</span>}
-                            </div>
-                            <div className="text-[11px] text-slate-400 break-all">
-                              {JSON.stringify(s.result)}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-
-                {thinking && (
-                  <div className="self-start flex items-center gap-2.5 p-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] text-xs text-slate-400">
-                    <RefreshCw className="h-3.5 w-3.5 animate-spin text-indigo-400" />
-                    <span>Analyst evaluating estate stage & tools...</span>
-                  </div>
-                )}
-                <div ref={bottomRef} />
-              </div>
-
-              {/* Chat Input & Suggested Prompts */}
-              <div className="mt-4 pt-4 border-t border-white/[0.06] flex flex-col gap-2.5">
-                {/* Clean Prompt Chips */}
-                <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-400">
-                  <span className="text-[11px] mr-1">Ask:</span>
-                  <button
-                    onClick={() => send("What is your current estate stage and funds?")}
-                    className="px-2.5 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-slate-300 transition-colors"
-                  >
-                    "What's your estate status?"
-                  </button>
-                  <button
-                    onClick={() => send("List all active standing briefs and client balances")}
-                    className="px-2.5 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-slate-300 transition-colors"
-                  >
-                    "Show standing briefs"
-                  </button>
-                  <button
-                    onClick={() => send("What's the weather in Mumbai?")}
-                    className="px-2.5 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-slate-300 transition-colors"
-                  >
-                    "Test paid weather API"
-                  </button>
+                  )}
                 </div>
+              ))}
 
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    send(input);
-                  }}
-                  className="flex items-center gap-2"
+              {thinking && (
+                <div className="self-start flex items-center gap-2 p-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] text-xs text-slate-400">
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-indigo-400" />
+                  <span>Agent verifying estate authority and generating response...</span>
+                </div>
+              )}
+              <div ref={bottomRef} />
+            </div>
+
+            {/* Input Bar */}
+            <div className="pt-3 border-t border-white/[0.06] flex flex-col gap-2 shrink-0">
+              {/* Quick Prompts */}
+              <div className="flex items-center gap-1.5 overflow-x-auto text-[11px] text-slate-400 no-scrollbar">
+                <span className="text-[10px] text-slate-500 uppercase mr-1">Suggestions:</span>
+                <button
+                  onClick={() => send("What is your current estate stage and funds?")}
+                  className="px-2.5 py-1 rounded-full bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] text-slate-300 transition-colors whitespace-nowrap"
                 >
-                  <Input
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder="Ask the Wills Analyst anything..."
-                    disabled={thinking}
-                    className="h-11 rounded-xl bg-white/[0.04] border-white/[0.08] text-sm focus-visible:ring-indigo-500"
-                  />
-                  <Button
-                    type="submit"
-                    disabled={thinking || !input.trim()}
-                    className="h-11 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium"
-                  >
-                    <SendHorizontal className="h-4 w-4" />
-                  </Button>
-                </form>
+                  "Check estate status"
+                </button>
+                <button
+                  onClick={() => send("List active standing briefs")}
+                  className="px-2.5 py-1 rounded-full bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] text-slate-300 transition-colors whitespace-nowrap"
+                >
+                  "List standing briefs"
+                </button>
+                <button
+                  onClick={() => send("What's the weather in Mumbai?")}
+                  className="px-2.5 py-1 rounded-full bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] text-slate-300 transition-colors whitespace-nowrap"
+                >
+                  "Test paid API"
+                </button>
               </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  send(input);
+                }}
+                className="flex items-center gap-2"
+              >
+                <Input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Ask the Wills Analyst about its estate, briefs, or tools..."
+                  disabled={thinking}
+                  className="h-10 rounded-xl bg-white/[0.04] border-white/[0.08] text-xs focus-visible:ring-indigo-500"
+                />
+                <Button
+                  type="submit"
+                  disabled={thinking || !input.trim()}
+                  className="h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium"
+                >
+                  <SendHorizontal className="h-4 w-4" />
+                </Button>
+              </form>
             </div>
           </div>
         )}
 
-        {/* ========================================================================= */}
-        {/* TAB 2: ESTATE VAULT (Financial metrics & on-chain wills)                  */}
-        {/* ========================================================================= */}
-        {activeTab === "vault" && (
-          <div className="flex flex-col gap-6 max-w-4xl mx-auto w-full">
-            {/* Financial Overview Cards */}
+        {/* ─── TAB 2: ESTATE VAULT (Financial Overview & Will) ─── */}
+        {tab === "vault" && (
+          <div className="flex-1 overflow-y-auto p-6 max-w-4xl mx-auto w-full flex flex-col gap-6">
+            <div>
+              <h2 className="font-heading text-xl font-bold text-white tracking-tight">Estate Vault & Governance</h2>
+              <p className="text-xs text-slate-400 mt-1">
+                The smart contract vault holds principal assets on Base Sepolia. Authority degrades automatically across five stages upon missed heartbeats.
+              </p>
+            </div>
+
+            {/* 3 Metric Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="p-5 rounded-2xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl">
-                <div className="text-xs font-mono text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
-                  <span>Vault Estate</span>
-                  <Shield className="h-4 w-4 text-emerald-400" />
+              <div className="p-4 rounded-xl border border-white/[0.06] bg-white/[0.02]">
+                <div className="text-[11px] font-mono text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                  <span>Vault Balance</span>
+                  <Shield className="h-3.5 w-3.5 text-emerald-400" />
                 </div>
                 <div className="text-2xl font-bold font-heading text-white">
                   {estate?.vaultBalance.formatted || "25.00 USDC"}
                 </div>
-                <p className="text-xs text-slate-400 mt-1">Smart Vault on Base Sepolia</p>
+                <p className="text-[11px] text-slate-500 mt-1">Smart Vault on Base Sepolia</p>
               </div>
 
-              <div className="p-5 rounded-2xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl">
-                <div className="text-xs font-mono text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+              <div className="p-4 rounded-xl border border-white/[0.06] bg-white/[0.02]">
+                <div className="text-[11px] font-mono text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
                   <span>Operating Float</span>
-                  <Wallet className="h-4 w-4 text-indigo-400" />
+                  <Wallet className="h-3.5 w-3.5 text-indigo-400" />
                 </div>
                 <div className="text-2xl font-bold font-heading text-white">
                   {estate?.agentFloat.formatted || "2.50 USDC"}
                 </div>
-                <p className="text-xs text-slate-400 mt-1">Agent Hot Wallet Balance</p>
+                <p className="text-[11px] text-slate-500 mt-1">Agent Working Capital</p>
               </div>
 
-              <div className="p-5 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.03] backdrop-blur-xl">
-                <div className="text-xs font-mono text-emerald-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+              <div className="p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.02]">
+                <div className="text-[11px] font-mono text-emerald-400 uppercase tracking-wider mb-1 flex items-center justify-between">
                   <span>Customer Earmark (I1)</span>
-                  <Lock className="h-4 w-4 text-emerald-400" />
+                  <Lock className="h-3.5 w-3.5 text-emerald-400" />
                 </div>
                 <div className="text-2xl font-bold font-heading text-emerald-400">
                   {estate?.earmarked.formatted || "1.20 USDC"}
                 </div>
-                <p className="text-xs text-slate-400 mt-1">Guaranteed client refund reserve</p>
+                <p className="text-[11px] text-slate-500 mt-1">Protected customer refund reserve</p>
               </div>
             </div>
 
-            {/* Heartbeat Status & Lifecycle Visualizer */}
-            <div className="p-6 rounded-2xl border border-white/[0.08] bg-white/[0.02]">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                <div>
-                  <h3 className="font-heading font-bold text-lg text-white">Owner Heartbeat Mechanism</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    The agent monitors the owner's liveness on-chain. If heartbeats cease, the estate degrades automatically.
-                  </p>
-                </div>
-                <Button
-                  onClick={() => triggerAction("heartbeat")}
-                  disabled={actionLoading || estate?.isSettled}
-                  className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold px-4 rounded-xl text-xs h-9 flex items-center gap-2"
-                >
-                  <Heart className="h-4 w-4 fill-current animate-pulse text-slate-950" />
-                  Send Heartbeat ("I'm Alive")
-                </Button>
+            {/* 5-Stage Visual Progression */}
+            <div className="p-5 rounded-xl border border-white/[0.06] bg-white/[0.02] flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <span className="font-heading font-semibold text-sm text-white">Lifecycle Degradation Stages</span>
+                <span className="text-xs font-mono text-slate-400">Current: <strong className="text-white">{stage}</strong></span>
               </div>
 
-              {/* 5 Stage Progress */}
-              <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
                 {(["ACTIVE", "WARNING", "WINDING_DOWN", "EXECUTABLE", "SETTLED"] as Stage[]).map((s) => {
                   const isCurrent = s === stage;
-                  const meta = STAGES_META[s];
+                  const cfg = STAGE_CONFIG[s];
                   return (
                     <div
                       key={s}
                       className={cn(
-                        "p-3 rounded-xl border text-xs transition-all",
-                        isCurrent
-                          ? `${meta.badge} ring-1 ring-white/20 font-bold`
-                          : "bg-white/[0.02] border-white/[0.05] text-slate-400 opacity-60"
+                        "p-3 rounded-lg border text-xs flex flex-col gap-1 transition-all",
+                        isCurrent ? `${cfg.badgeBg} ${cfg.badgeBorder} ring-1 ring-white/10` : "bg-white/[0.01] border-white/[0.04] opacity-50 text-slate-400"
                       )}
                     >
-                      <div className="flex items-center justify-between mb-1">
-                        <span>{meta.label}</span>
+                      <div className="flex items-center justify-between font-bold">
+                        <span className={isCurrent ? cfg.badgeText : ""}>{cfg.label}</span>
                         {isCurrent && <span className="h-1.5 w-1.5 rounded-full bg-current animate-ping" />}
                       </div>
-                      <p className="text-[11px] font-normal text-slate-400 leading-tight">{meta.desc}</p>
+                      <p className="text-[10px] text-slate-400 leading-tight">{cfg.description}</p>
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            {/* On-Chain Will & Heirs Allocation */}
-            <div className="p-6 rounded-2xl border border-white/[0.08] bg-white/[0.02] flex flex-col gap-4">
-              <div>
-                <h3 className="font-heading font-bold text-lg text-white">On-Chain Will & Heirs Specification</h3>
-                <p className="text-xs text-slate-400">
-                  When settled, leftover funds are trustlessly distributed according to these signed basis points.
-                </p>
+            {/* On-Chain Will & Heirs */}
+            <div className="p-5 rounded-xl border border-white/[0.06] bg-white/[0.02] flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-heading font-semibold text-sm text-white">On-Chain Will Specification</h3>
+                <span className="text-[11px] font-mono text-slate-500">Immutable Hash</span>
               </div>
 
-              <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.03] border border-white/[0.06] text-xs font-mono">
-                <span className="text-slate-400">Will Hash (Keccak256):</span>
+              <div className="p-3 rounded-lg bg-black/40 border border-white/[0.04] flex items-center justify-between text-xs font-mono">
+                <span className="text-slate-400">Keccak256 Will Hash:</span>
                 <span className="text-indigo-300 break-all">{estate?.willHash}</span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 {estate?.heirs.map((heir, idx) => (
-                  <div key={idx} className="p-3.5 rounded-xl border border-white/[0.06] bg-white/[0.02] flex flex-col gap-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-white">{heir.label || `Heir ${idx + 1}`}</span>
-                      <span className="text-indigo-400 font-mono font-bold">{(heir.bps / 100).toFixed(0)}% ({heir.bps} bps)</span>
+                  <div key={idx} className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.04] flex flex-col gap-1 text-xs">
+                    <div className="flex items-center justify-between font-medium">
+                      <span className="text-white">{heir.label || `Heir ${idx + 1}`}</span>
+                      <span className="font-mono text-indigo-400">{(heir.bps / 100).toFixed(0)}% ({heir.bps} bps)</span>
                     </div>
-                    <span className="text-[11px] font-mono text-slate-400 truncate">{heir.address}</span>
+                    <span className="text-[11px] font-mono text-slate-500 truncate">{heir.address}</span>
                   </div>
                 ))}
               </div>
@@ -716,118 +686,64 @@ export default function Home() {
           </div>
         )}
 
-        {/* ========================================================================= */}
-        {/* TAB 3: STANDING BRIEFS (Client Jobs, Delivery & Refund Reserves)          */}
-        {/* ========================================================================= */}
-        {activeTab === "briefs" && (
-          <div className="flex flex-col gap-6 max-w-4xl mx-auto w-full">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/[0.06] pb-4">
+        {/* ─── TAB 3: STANDING BRIEFS (Client Jobs & Refunds) ─── */}
+        {tab === "briefs" && (
+          <div className="flex-1 overflow-y-auto p-6 max-w-4xl mx-auto w-full flex flex-col gap-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h2 className="font-heading font-bold text-xl text-white">Client Standing Briefs</h2>
-                <p className="text-xs text-slate-400">
-                  Prepaid daily research digests. Unearned remainder is protected by Invariant I1 and automatically refunded upon wind-down.
+                <h2 className="font-heading text-xl font-bold text-white tracking-tight">Standing Research Briefs</h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Clients prepay for daily autonomous digests. Undelivered portions are protected by Invariant I1 and auto-refunded upon wind-down.
                 </p>
               </div>
+
               <Button
-                onClick={() => setShowCommissionModal(true)}
+                onClick={() => setShowBriefModal(true)}
                 disabled={stage !== "ACTIVE"}
                 className={cn(
                   "h-9 px-4 rounded-xl text-xs font-semibold",
                   stage === "ACTIVE"
                     ? "bg-indigo-600 hover:bg-indigo-500 text-white"
-                    : "bg-white/[0.05] text-slate-500 cursor-not-allowed"
+                    : "bg-white/[0.04] text-slate-500 cursor-not-allowed"
                 )}
               >
-                <Plus className="h-4 w-4 mr-1.5" /> Commission Brief
+                <Plus className="h-3.5 w-3.5 mr-1" /> Commission Brief
               </Button>
             </div>
 
-            {/* Modal Drawer to Commission Brief */}
-            {showCommissionModal && (
-              <div className="p-5 rounded-2xl border border-indigo-500/30 bg-slate-900/90 backdrop-blur-xl flex flex-col gap-4 text-xs">
-                <h3 className="font-heading font-bold text-base text-white">Commission a Standing Research Brief</h3>
-                <div>
-                  <label className="text-slate-400 mb-1 block">Topic:</label>
-                  <Input
-                    value={newTopic}
-                    onChange={(e) => setNewTopic(e.target.value)}
-                    placeholder="e.g. Base Sepolia Cross-Chain Relayer Latency"
-                    className="h-10 rounded-xl bg-white/[0.04] border-white/[0.08]"
-                  />
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="flex-1">
-                    <label className="text-slate-400 mb-1 block">Duration (Days):</label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={30}
-                      value={newDays}
-                      onChange={(e) => setNewDays(Number(e.target.value))}
-                      className="h-10 rounded-xl bg-white/[0.04] border-white/[0.08]"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <label className="text-slate-400 mb-1 block">Prepaid Price (0.10 USDC/day):</label>
-                    <div className="h-10 flex items-center px-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06] font-mono text-emerald-400 font-bold">
-                      {(newDays * 0.1).toFixed(2)} USDC
-                    </div>
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowCommissionModal(false)}
-                    className="h-8 rounded-lg text-slate-400"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={handleCommissionBrief}
-                    disabled={actionLoading}
-                    className="h-8 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium"
-                  >
-                    Confirm & Prepay
-                  </Button>
-                </div>
-              </div>
-            )}
-
             {/* List of Briefs */}
-            <div className="grid grid-cols-1 gap-4">
+            <div className="flex flex-col gap-3">
               {briefs.map((b) => {
                 const pct = Math.round((b.delivered / b.totalDays) * 100);
                 return (
                   <div
                     key={b.id}
-                    className="p-5 rounded-2xl border border-white/[0.07] bg-white/[0.02] hover:bg-white/[0.03] transition-all flex flex-col gap-3"
+                    className="p-4 rounded-xl border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.03] transition-all flex flex-col gap-3 text-xs"
                   >
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start justify-between gap-4">
                       <div>
-                        <h4 className="font-heading font-bold text-base text-white">{b.topic}</h4>
-                        <span className="text-xs font-mono text-slate-400">
+                        <h4 className="font-heading font-semibold text-sm text-white">{b.topic}</h4>
+                        <div className="text-[11px] font-mono text-slate-400 mt-0.5">
                           Client: {b.clientAddress.slice(0, 6)}...{b.clientAddress.slice(-4)} · ID: {b.id}
-                        </span>
+                        </div>
                       </div>
-                      <Badge variant="outline" className="text-xs font-mono uppercase bg-white/[0.04]">
+                      <Badge variant="outline" className="text-[10px] uppercase font-mono bg-white/[0.03]">
                         {b.status}
                       </Badge>
                     </div>
 
                     {/* Progress Bar */}
                     <div>
-                      <div className="flex justify-between text-xs text-slate-400 mb-1.5 font-mono">
+                      <div className="flex justify-between text-[11px] text-slate-400 mb-1 font-mono">
                         <span>Progress: {b.delivered} of {b.totalDays} Days Delivered ({pct}%)</span>
-                        <span className="text-white font-semibold">{b.prepaidUSDC}</span>
+                        <span className="text-white font-medium">{b.prepaidUSDC}</span>
                       </div>
-                      <div className="w-full h-2 bg-white/[0.06] rounded-full overflow-hidden">
+                      <div className="w-full h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
                         <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
                       </div>
                     </div>
 
-                    <div className="pt-2 border-t border-white/[0.05] flex items-center justify-between text-xs font-mono">
+                    <div className="flex items-center justify-between pt-2 border-t border-white/[0.04] text-[11px] font-mono">
                       <span className="text-slate-400">Refund reserve if wound down:</span>
                       <span className="text-emerald-400 font-bold">{b.refundIfCancelled}</span>
                     </div>
@@ -839,10 +755,130 @@ export default function Home() {
         )}
       </main>
 
-      {/* ─── MINIMAL FOOTER ─── */}
-      <footer className="border-t border-white/[0.06] py-4 px-4 text-center text-xs text-slate-500 font-mono">
-        <span>WILLS · Autonomous Agent Estate Protocol · Base Sepolia Testnet</span>
-      </footer>
+      {/* ─── TIME WARP SIMULATION MODAL (Clean popover, not cluttering the screen!) ─── */}
+      {showTimeModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[#0E1118] p-5 shadow-2xl flex flex-col gap-4 text-xs font-mono">
+            <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
+              <div className="flex items-center gap-2 font-heading font-bold text-sm text-white">
+                <FastForward className="h-4 w-4 text-indigo-400" />
+                <span>Simulation Time Warp</span>
+              </div>
+              <button onClick={() => setShowTimeModal(false)} className="text-slate-400 hover:text-white">✕</button>
+            </div>
+
+            <p className="text-slate-400 font-sans leading-relaxed">
+              Fast-forward simulated time to observe estate degradation across stages without waiting hours or days.
+            </p>
+
+            <div className="p-3 rounded-lg bg-black/30 border border-white/[0.04] flex justify-between">
+              <span className="text-slate-400">Current elapsed:</span>
+              <span className="text-white font-bold">{estate?.elapsed ?? 0}s</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { triggerAction("warp", { seconds: 30 }); setShowTimeModal(false); }}
+                className="h-9 text-xs border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.07]"
+              >
+                +30s Step
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { triggerAction("warp", { seconds: 90 }); setShowTimeModal(false); }}
+                className="h-9 text-xs border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
+              >
+                +90s (Warning)
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { triggerAction("warp", { seconds: 180 }); setShowTimeModal(false); }}
+                className="h-9 text-xs border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20"
+              >
+                +180s (Wind Down)
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { triggerAction("warp", { seconds: 300 }); setShowTimeModal(false); }}
+                className="h-9 text-xs border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20"
+              >
+                +300s (Executable)
+              </Button>
+            </div>
+
+            <div className="flex justify-between items-center pt-2 border-t border-white/[0.06]">
+              <button
+                onClick={() => { triggerAction("reset"); setShowTimeModal(false); }}
+                className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1"
+              >
+                <RotateCcw className="h-3 w-3" /> Reset to Real Time
+              </button>
+
+              <Button size="sm" onClick={() => setShowTimeModal(false)} className="h-8 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white">
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── COMMISSION BRIEF MODAL ─── */}
+      {showBriefModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[#0E1118] p-5 shadow-2xl flex flex-col gap-4 text-xs">
+            <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
+              <h3 className="font-heading font-bold text-sm text-white">Commission a Standing Brief</h3>
+              <button onClick={() => setShowBriefModal(false)} className="text-slate-400 hover:text-white font-mono">✕</button>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <div>
+                <label className="text-slate-400 mb-1 block">Topic:</label>
+                <Input
+                  value={topicInput}
+                  onChange={(e) => setTopicInput(e.target.value)}
+                  placeholder="e.g. Cross-Chain Relayer Latency on Base Sepolia"
+                  className="h-10 rounded-xl bg-white/[0.04] border-white/[0.08] text-xs"
+                />
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <label className="text-slate-400 mb-1 block">Duration (Days):</label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={30}
+                    value={daysInput}
+                    onChange={(e) => setDaysInput(Number(e.target.value))}
+                    className="h-10 rounded-xl bg-white/[0.04] border-white/[0.08] text-xs font-mono"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="text-slate-400 mb-1 block">Prepaid Price:</label>
+                  <div className="h-10 flex items-center px-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] font-mono text-emerald-400 font-bold">
+                    {(daysInput * 0.1).toFixed(2)} USDC
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.06]">
+              <Button variant="ghost" size="sm" onClick={() => setShowBriefModal(false)} className="h-8 rounded-lg text-slate-400">
+                Cancel
+              </Button>
+              <Button size="sm" onClick={commissionBrief} disabled={actionLoading} className="h-8 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium">
+                Confirm & Prepay
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
