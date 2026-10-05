@@ -6,7 +6,10 @@ import { cn } from "@/lib/utils";
 const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-space-grotesk" });
 const jetBrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains-mono" });
 
-export const metadata = { title: "Agentic Starter" };
+export const metadata = {
+  title: "WILLS — An Estate for Autonomous Agents",
+  description: "Autonomous estate protocol for AI agents: heartbeat gating, customer refunds, and on-chain wills.",
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
